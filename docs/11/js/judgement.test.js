@@ -3,29 +3,43 @@ import { Judgement, JudgementError, JudgementImplementationError, JudgementFailE
 describe('Judgement', () => {
     describe('instance', () => {
         describe('constructor()', () => {
-            test('constructor(fn)', () => {
-                const j = new Judgement((pass,fail)=>pass(1));
-                expect(j).toBeInstanceOf(Judgement);
-            });
-            test('constructor(undefined)', () => {
+            test('constructor()', () => {
                 const target = ()=>new Judgement();
                 expect(target).toThrow(TypeError);
                 expect(target).toThrow(`fnは関数であるべきです。`);
             });
-            test('constructor(fn(PassかFailを返さぬ))', () => {
+            test('constructor(undefined)', () => {
+                const target = ()=>new Judgement(undefined);
+                expect(target).toThrow(TypeError);
+                expect(target).toThrow(`fnは関数であるべきです。`);
+            });
+            test('constructor((pass,fail)=>0) PassかFailを返さぬ', () => {
                 const target = ()=>new Judgement((pass,fail)=>0);
                 expect(target).toThrow(TypeError);
                 expect(target).toThrow(`fnの戻り値はPassかFailのいずれかであるべきです。`);
             });
-            test('constructor(fn(Pass))', () => {
-                const j = new Judgement((pass,fail)=>pass(1));
+            test('constructor((pass,fail)=>pass())', () => {
+                const j = new Judgement((pass,fail)=>pass());
                 expect(j).toBeInstanceOf(Judgement);
                 expect(j.isPass).toBe(true);
                 expect(j.isFail).toBe(false);
                 expect(j.result).toBeInstanceOf(Pass);
-                expect(j.result.value).toBe(1);
+                expect(j.result.value).toBe(undefined);
             });
-            test('constructor(fn(Fail()))', () => {
+            test.each([
+                [undefined, 0],
+                [null, 0],
+                [true, 0],
+                [1, 0],
+            ])('constructor((pass,fail)=>pass(%p))', (a, expected) => {
+                const j = new Judgement((pass,fail)=>pass(a));
+                expect(j).toBeInstanceOf(Judgement);
+                expect(j.isPass).toBe(true);
+                expect(j.isFail).toBe(false);
+                expect(j.result).toBeInstanceOf(Pass);
+                expect(j.result.value).toBe(a);
+            });
+            test('constructor((pass,fail)=>fail())', () => {
                 try {new Judgement((pass,fail)=>fail()); expect.unreachable();} catch (e) {
                     expect(e).toBeInstanceOf(JudgementImplementationError);
                     expect(e.message).toBe(`new Judgement(fn)のfnコールバック関数実行時に例外発生しました。内容を見直してください。`);
@@ -33,7 +47,11 @@ describe('Judgement', () => {
                     expect(e.cause.message).toBe(`Failの引数は二つ必要です。`);
                 }
             });
-            test('constructor(fn(Fail(undefined)))', () => {
+            test.each([
+                {a:undefined,       l:'undefined', expected:0},
+                {a:1,               l:'1', expected:0},
+                {a:new Error('X'),  l:'Error', expected:0},
+            ])("constructor((pass,fail)=>fail($l))", ({a, expected}) => {
                 try {new Judgement((pass,fail)=>fail(undefined)); expect.unreachable();} catch (e) {
                     expect(e).toBeInstanceOf(JudgementImplementationError);
                     expect(e.message).toBe(`new Judgement(fn)のfnコールバック関数実行時に例外発生しました。内容を見直してください。`);
@@ -49,49 +67,6 @@ describe('Judgement', () => {
                     expect(e.cause.message).toBe(`Failの引数はErrorインスタンスとそれ以外の値の二つ必要です。`);
                 }
             });
-            test('constructor(fn(Fail(1)))', () => {
-                try {new Judgement((pass,fail)=>fail(1)); expect.unreachable();} catch (e) {
-                    expect(e).toBeInstanceOf(JudgementImplementationError);
-                    expect(e.message).toBe(`new Judgement(fn)のfnコールバック関数実行時に例外発生しました。内容を見直してください。`);
-                    expect(e.cause).toBeInstanceOf(JudgementImplementationError);
-                    expect(e.cause.message).toBe(`Failの引数は二つ必要です。`);
-                }
-                /*
-                const j = new Judgement((pass,fail)=>fail(1));
-                expect(j).toBeInstanceOf(Judgement);
-                expect(j.isFail).toBe(true);
-                expect(j.isPass).toBe(false);
-                expect(j.result).toBeInstanceOf(Fail);
-                expect(j.result.value).toBe(1);
-                expect(j.result.candidates).toEqual([1]);
-                try {j.result.cause; expect.unreachable();} catch (e) {
-                    expect(e).toBeInstanceOf(JudgementError);
-                    expect(e.message).toBe(`Errorインスタンスが与えられていません。`);
-                }
-                */
-            });
-            test('constructor(fn(Fail(Error)))', () => {
-                try {new Judgement((pass,fail)=>fail(new Error('X'))); expect.unreachable();} catch (e) {
-                    expect(e).toBeInstanceOf(JudgementImplementationError);
-                    expect(e.message).toBe(`new Judgement(fn)のfnコールバック関数実行時に例外発生しました。内容を見直してください。`);
-                    expect(e.cause).toBeInstanceOf(JudgementImplementationError);
-                    expect(e.cause.message).toBe(`Failの引数は二つ必要です。`);
-                }
-                /*
-                const cause = new Error('X');
-                const j = new Judgement((pass,fail)=>fail(cause));
-                expect(j).toBeInstanceOf(Judgement);
-                expect(j.isFail).toBe(true);
-                expect(j.isPass).toBe(false);
-                expect(j.result).toBeInstanceOf(Fail);
-                expect(j.result.cause).toBe(cause);
-                expect(j.result.candidates).toEqual([cause]);
-                try {j.result.value; expect.unreachable();} catch (e) {
-                    expect(e).toBeInstanceOf(JudgementError);
-                    expect(e.message).toBe(`値が与えられていません。`);
-                }
-                */
-            });
             test('constructor(fn(Fail(1,Error)))', () => {
                 const cause = new Error('X');
                 const j = new Judgement((pass,fail)=>fail(1,cause));
@@ -102,7 +77,6 @@ describe('Judgement', () => {
                 expect(j.result.value).toBe(1);
                 expect(j.result.cause).toBe(cause);
                 expect(j.result.first).toBe(j.result.value);
-//                expect(j.result.candidates).toEqual([1, cause]);
             });
             test('constructor(fn(Fail(Error,1)))', () => {
                 const cause = new Error('X');
@@ -114,99 +88,22 @@ describe('Judgement', () => {
                 expect(j.result.value).toBe(1);
                 expect(j.result.cause).toBe(cause);
                 expect(j.result.first).toBe(j.result.cause);
-//                expect(j.result.candidates).toEqual([cause,1]);
             });
-            test('constructor(fn(Fail(1,2)))', () => {
-                try {new Judgement((pass,fail)=>fail(1,2)); expect.unreachable();} catch (e) {
+            test.each([
+                [1,2,0],
+                [2,1,0],
+                [...'X Y'.split(' ').map(m=>new Error(m)),0],
+            ])("constructor(fn(Fail(%i,%i)))", (a, b, expected) => {
+                try {new Judgement((pass,fail)=>fail(a,b)); expect.unreachable();} catch (e) {
                     expect(e).toBeInstanceOf(JudgementImplementationError);
                     expect(e.message).toBe(`new Judgement(fn)のfnコールバック関数実行時に例外発生しました。内容を見直してください。`);
                     expect(e.cause).toBeInstanceOf(JudgementImplementationError);
                     expect(e.cause.message).toBe(`Failの引数はErrorインスタンスとそれ以外の値の二つ必要です。`);
                 }
-                /*
-                const j = new Judgement((pass,fail)=>fail(1,2));
-                expect(j).toBeInstanceOf(Judgement);
-                expect(j.isFail).toBe(true);
-                expect(j.isPass).toBe(false);
-                expect(j.result).toBeInstanceOf(Fail);
-                expect(j.result.value).toBe(1);
-//                expect(j.result.candidates).toEqual([1,2]);
-                try {j.result.cause; expect.unreachable();} catch (e) {
-                    expect(e).toBeInstanceOf(JudgementError);
-                    expect(e.message).toBe(`Errorインスタンスが与えられていません。`);
-                }
-                */
             });
-            test('constructor(fn(Fail(2,1)))', () => {
-                try {new Judgement((pass,fail)=>fail(2,1)); expect.unreachable();} catch (e) {
-                    expect(e).toBeInstanceOf(JudgementImplementationError);
-                    expect(e.message).toBe(`new Judgement(fn)のfnコールバック関数実行時に例外発生しました。内容を見直してください。`);
-                    expect(e.cause).toBeInstanceOf(JudgementImplementationError);
-                    expect(e.cause.message).toBe(`Failの引数はErrorインスタンスとそれ以外の値の二つ必要です。`);
-                }
-
-                /*
-                const j = new Judgement((pass,fail)=>fail(2,1));
-                expect(j).toBeInstanceOf(Judgement);
-                expect(j.isFail).toBe(true);
-                expect(j.isPass).toBe(false);
-                expect(j.result).toBeInstanceOf(Fail);
-                expect(j.result.value).toBe(2);
-//                expect(j.result.candidates).toEqual([2,1]);
-                try {j.result.cause; expect.unreachable();} catch (e) {
-                    expect(e).toBeInstanceOf(JudgementError);
-                    expect(e.message).toBe(`Errorインスタンスが与えられていません。`);
-                }
-                */
-            });
-            test('constructor(fn(Fail(Error,Error)))', () => {
-                try {new Judgement((pass,fail)=>fail(new Error('X'), new Error('Y'))); expect.unreachable();} catch (e) {
-                    expect(e).toBeInstanceOf(JudgementImplementationError);
-                    expect(e.message).toBe(`new Judgement(fn)のfnコールバック関数実行時に例外発生しました。内容を見直してください。`);
-                    expect(e.cause).toBeInstanceOf(JudgementImplementationError);
-                    expect(e.cause.message).toBe(`Failの引数はErrorインスタンスとそれ以外の値の二つ必要です。`);
-                }
-                /*
-                const cause = new Error('X');
-                const cause2 = new Error('Y');
-                const j = new Judgement((pass,fail)=>fail(cause,cause2));
-                expect(j).toBeInstanceOf(Judgement);
-                expect(j.isFail).toBe(true);
-                expect(j.isPass).toBe(false);
-                expect(j.result).toBeInstanceOf(Fail);
-                expect(j.result.cause).toBe(cause);
-//                expect(j.result.candidates).toEqual([cause,cause2]);
-                try {j.result.value; expect.unreachable();} catch (e) {
-                    expect(e).toBeInstanceOf(JudgementError);
-                    expect(e.message).toBe(`値が与えられていません。`);
-                }
-                */
-            });
-            /*
-            */
         });
-    });
-/*
         describe('judge()', () => {
-            describe('judge(undefined)', () => {
-                test('new Judgement((pass,fail)=>pass(1))', () => {
-                    const j = new Judgement((pass,fail)=>pass(1));
-                    expect(j.judge()).toBe(1);
-                });
-                test('new Judgement((pass,fail)=>fail(1))', () => {
-                    const j = new Judgement((pass,fail)=>fail(1));
-                    expect(j.judge()).toBe(1);
-                });
-                test(`new Judgement((pass,fail)=>fail(Error))`, () => {
-                    const cause = new Error('X');
-                    const j = new Judgement((pass,fail)=>fail(cause));
-                    try {j.judge(); expect.unreachable();} catch (e) {
-                        expect(e).toBeInstanceOf(JudgementError);
-                        expect(e.message).toBe('失敗。');
-                        expect(e.cause).toBe(cause); 
-                        expect(e.cause.message).toBe(cause.message);
-                    }
-                });
+            describe('judge()', () => {
                 test(`new Judgement((pass,fail)=>fail(1,Error))`, () => {
                     const cause = new Error('X');
                     const j = new Judgement((pass,fail)=>fail(1, cause));
@@ -216,55 +113,60 @@ describe('Judgement', () => {
                     const cause = new Error('X');
                     const j = new Judgement((pass,fail)=>fail(cause,1));
                     try {j.judge(); expect.unreachable();} catch (e) {
-                        expect(e).toBeInstanceOf(JudgementError);
+                        expect(e).toBeInstanceOf(JudgementFailError);
                         expect(e.message).toBe('失敗。');
                         expect(e.cause).toBe(cause); 
                         expect(e.cause.message).toBe(cause.message);
                     }
                 });
-                test('new Judgement((pass,fail)=>fail(1,2))', () => {
-                    const j = new Judgement((pass,fail)=>fail(1,2));
-                    expect(j.judge()).toBe(1);
-                });
-                test('new Judgement((pass,fail)=>fail(2,1))', () => {
-                    const j = new Judgement((pass,fail)=>fail(2,1));
-                    expect(j.judge()).toBe(2);
-                });
-                test(`new Judgement((pass,fail)=>fail(Error,Error))`, () => {
+            });
+            describe('.cause(e=>{throw new TypeError(`包む`,{cause:e})}).judge()', () => {
+                test.todo(`judge(undefined)を真似て網羅テストを書くこと。`, ()=>{});
+                test(`new Judgement((pass,fail)=>fail(1,Error))`, () => {
                     const cause = new Error('X');
-                    const cause2 = new Error('Y');
-                    const j = new Judgement((pass,fail)=>fail(cause,cause2));
-                    try {j.judge(); expect.unreachable();} catch (e) {
-                        expect(e).toBeInstanceOf(JudgementError);
+                    const j = new Judgement((pass,fail)=>fail(1, cause));
+                    const fn = e=>{throw new TypeError(`包む`,{cause:e})};
+                    expect(j.cause(fn).judge(fn)).toBe(1);
+                });
+                test(`new Judgement((pass,fail)=>fail(Error,1))`, () => {
+                    const cause = new Error('X');
+                    const j = new Judgement((pass,fail)=>fail(cause, 1));
+                    const fn = e=>{throw new TypeError(`包む`, {cause:e})};
+                    try {j.cause(fn).judge(); expect.unreachable();} catch (e) {
+                        expect(e).toBeInstanceOf(TypeError);
+                        expect(e.message).toBe(`包む`);
+//                        expect(e.cause).toBe(cause); 
+                        expect(e.cause).toBeInstanceOf(JudgementFailError); 
+                        expect(e.cause.message).toBe('失敗。');
+                        expect(e.cause.cause).toBe(cause); 
+                        expect(e.cause.cause).toBeInstanceOf(Error); 
+                        expect(e.cause.cause.message).toBe(cause.message);
+                    }
+                });
+            });
+            describe('.value(value).judge()', () => {
+                test(`new Judgement((pass,fail)=>fail(1,Error))`, () => {
+                    const cause = new Error('X');
+                    const j = new Judgement((pass,fail)=>fail(1, cause));
+                    expect(j.value(9).judge()).toBe(9);
+                });
+                test(`new Judgement((pass,fail)=>fail(Error,1))`, () => {
+                    const cause = new Error('X');
+                    const j = new Judgement((pass,fail)=>fail(cause,1));
+                    try {j.value(9).judge(); expect.unreachable();} catch (e) {
+                        expect(e).toBeInstanceOf(JudgementFailError);
                         expect(e.message).toBe('失敗。');
                         expect(e.cause).toBe(cause); 
                         expect(e.cause.message).toBe(cause.message);
                     }
                 });
-                test(`new Judgement((pass,fail)=>fail(ErrorY,ErrorX))`, () => {
-                    const cause = new Error('Y');
-                    const cause2 = new Error('X');
-                    const j = new Judgement((pass,fail)=>fail(cause,cause2));
-                    try {j.judge(); expect.unreachable();} catch (e) {
-                        expect(e).toBeInstanceOf(JudgementError);
-                        expect(e.message).toBe('失敗。');
-                        expect(e.cause).toBe(cause); 
-                        expect(e.cause.message).toBe(cause.message);
-                    }
-                });
-            });
-            describe('judge(fn)', () => {
-                test.todo(`judge(undefined)を真似て網羅テストを書くこと。`, ()=>{});
-            });
-            describe('judge(value)', () => {
-                test.todo(`judge(undefined)を真似て網羅テストを書くこと。`, ()=>{});
             });
         });
-        describe('実装例indexOf(fail(Error))', () => {
+        describe('実装例indexOf(fail(Error,-1))', () => {
             const indexOf = (s, c) => {
                 return new Judgement((pass, fail)=>{
                     const i = s.indexOf(c);
-                    return 0<=i ? pass(i) : fail(new Error(`指定の字'${c}'は存在しませんでした。`));
+                    return 0<=i ? pass(i) : fail(new Error(`指定の字'${c}'は存在しませんでした。`),-1);
                 });
             };
             test('成功', () => {
@@ -281,19 +183,19 @@ describe('Judgement', () => {
                 expect(res.isPass).toBe(false);
                 expect(res.isFail).toBe(true);
                 try {res.judge(); expect.unreachable();} catch (e) {
-                    expect(e).toBeInstanceOf(JudgementError);
+                    expect(e).toBeInstanceOf(JudgementFailError);
                     expect(e.message).toBe('失敗。');
                     expect(e.cause).toBeInstanceOf(Error); 
                     expect(e.cause.message).toBe(`指定の字'z'は存在しませんでした。`);
                 }
             });
         });
-        describe('実装例indexOf(fail(-1))', () => {
+        describe('実装例indexOf(fail(-1,Error))', () => {
             const failValue = -1;
             const indexOf = (s, c) => {
                 return new Judgement((pass, fail)=>{
                     const i = s.indexOf(c);
-                    return 0<=i ? pass(i) : fail(failValue);
+                    return 0<=i ? pass(i) : fail(failValue, new Error(`指定の字'${c}'は存在しませんでした。`));
                 });
             };
             test('成功', () => {
@@ -313,12 +215,12 @@ describe('Judgement', () => {
                 expect(index).toBe(failValue);
             });
         });
-        describe('実装例indexOf(fail(3)) 失敗時も成功時と同じ値を返すがisPass/Failで識別可能', () => {
+        describe('実装例indexOf(fail(3,Error)) 失敗時も成功時と同じ値を返すがisPass/Failで識別可能', () => {
             const failValue = 3;
             const indexOf = (s, c) => {
                 return new Judgement((pass, fail)=>{
                     const i = s.indexOf(c);
-                    return 0<=i ? pass(i) : fail(failValue);
+                    return 0<=i ? pass(i) : fail(failValue, new Error(`指定の字'${c}'は存在しませんでした。`));
                 });
             };
             test('成功', () => {
@@ -344,6 +246,7 @@ describe('Judgement', () => {
 
         describe('throw()', () => {
             describe('throw(undefined)', () => {
+                /*
                 test('new Judgement((pass,fail)=>pass(1))', () => {
                     const j = new Judgement((pass,fail)=>pass(1));
                     expect(j.throw()).toBe(1);
@@ -365,11 +268,12 @@ describe('Judgement', () => {
                         expect(e.cause.message).toBe(cause.message);
                     }
                 });
+                */
                 test(`new Judgement((pass,fail)=>fail(1,Error))`, () => {
                     const cause = new Error('X');
                     const j = new Judgement((pass,fail)=>fail(1, cause));
                     try {j.throw(); expect.unreachable();} catch (e) {
-                        expect(e).toBeInstanceOf(JudgementError);
+                        expect(e).toBeInstanceOf(JudgementFailError);
                         expect(e.message).toBe('失敗。');
                         expect(e.cause).toBe(cause); 
                         expect(e.cause.message).toBe(cause.message);
@@ -379,12 +283,13 @@ describe('Judgement', () => {
                     const cause = new Error('X');
                     const j = new Judgement((pass,fail)=>fail(cause,1));
                     try {j.throw(); expect.unreachable();} catch (e) {
-                        expect(e).toBeInstanceOf(JudgementError);
+                        expect(e).toBeInstanceOf(JudgementFailError);
                         expect(e.message).toBe('失敗。');
                         expect(e.cause).toBe(cause); 
                         expect(e.cause.message).toBe(cause.message);
                     }
                 });
+                /*
                 test('new Judgement((pass,fail)=>fail(1,2))', () => {
                     const j = new Judgement((pass,fail)=>fail(1,2));
                     try {j.throw(); expect.unreachable();} catch (e) {
@@ -421,6 +326,7 @@ describe('Judgement', () => {
                         expect(e.cause.message).toBe(cause.message);
                     }
                 });
+                */
             });
             describe('throw(fn)', () => {
                 test.todo(`throw(undefined)を真似て網羅テストを書くこと。`, ()=>{});
@@ -428,6 +334,7 @@ describe('Judgement', () => {
         });
         describe('at()', () => {
             describe('at(undefined)', () => {
+                /*
                 test('new Judgement((pass,fail)=>pass(1))', () => {
                     const j = new Judgement((pass,fail)=>pass(1));
                     expect(j.at()).toBe(1);
@@ -444,6 +351,7 @@ describe('Judgement', () => {
                         expect(e.message).toBe(`値が与えられていません。`);
                     }
                 });
+                */
                 test(`new Judgement((pass,fail)=>fail(1,Error))`, () => {
                     const cause = new Error('X');
                     const j = new Judgement((pass,fail)=>fail(1, cause));
@@ -454,6 +362,7 @@ describe('Judgement', () => {
                     const j = new Judgement((pass,fail)=>fail(cause,1));
                     expect(j.at()).toBe(1);
                 });
+                /*
                 test('new Judgement((pass,fail)=>fail(1,2))', () => {
                     const j = new Judgement((pass,fail)=>fail(1,2));
                     expect(j.at()).toBe(1);
@@ -480,12 +389,12 @@ describe('Judgement', () => {
                         expect(e.message).toBe(`値が与えられていません。`);
                     }
                 });
+                */
             });
             describe('at(defaultValue)', () => {
                 test.todo(`at(undefined)を真似て網羅テストを書くこと。`, ()=>{});
             });
         });
     });
-    */
 });
 

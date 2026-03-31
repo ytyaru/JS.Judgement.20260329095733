@@ -30,7 +30,7 @@ const isFn = (v) => 'function'===typeof v
     , isInt = (v) => Number.isSafeInteger(v)
     , judRes = Object.freeze({
         pass: (v) => new Pass(v),
-        fail: (...v) => new Fail(...v),
+        fail: (failedAct, ...vs) => new Fail(failedAct, ...vs),
     })
     , judActs = Object.freeze({mix:0, throw:1, at:2})
 ;
@@ -45,9 +45,9 @@ class Judgement {
     constructor(fn, failedAct=judActs.mix) {
         failedAct = this.#validFailedAct(failedAct);
         const res = this.#callbackFn(fn, failedAct); // 引数で渡す
-        console.log(`res:`, res);
+//        console.log(`res:`, res);
         this.#validResult(res);
-        this._={fn, res, failedAct};
+        this._={fn, res, failedAct, processor:{pass:undefined, value:undefined, cause:undefined}};
     }
     #validFailedAct(v) {// vは数,字,関数のいずれか。0:mix:Judgement.mix, 1:cause:Judgement.cause, 2:value:Judgement.value
         const nms = [...Object.keys(judActs)];
@@ -60,8 +60,9 @@ class Judgement {
         try {
             // this._.failedAct ではなく、引数の failedAct を使う
             return fn((v)=>new Pass(v), (...v)=>new Fail(failedAct, ...v));
+//            return fn(judRes.pass, (...v)=>new Fail(failedAct, ...v));
         } catch(e) {
-            console.log(e);
+//            console.log(e);
             throw new JudgementImplementationError(`new Judgement(fn)のfnコールバック関数実行時に例外発生しました。内容を見直してください。`, e);
         }
         /*
@@ -81,12 +82,23 @@ class Judgement {
     get isPass() {return this._.res instanceof Pass}
     get isFail() {return this._.res instanceof Fail}
     get result() {return this._.res}    // これは必要か？　isPass/isFail/judge()/throw()/at()で十分では？
-    judge(...args) {return this.isPass ? this._.res.value : this._.res.unwrap(...args)}
+    // コールバック関数やデフォルト値の設定（メソッドチェーン）
+//    fail(v) {if(this.isFail){if(isFn(v)){this.result.cb=v}else{this.result.alt=v}}}
+//    fail(v) {if(this.isFail){this.result[isFn(v) ? 'cb' : 'alt']=v}}
+//    pass(cb) {if(this.isPass){this.result.cb = cb}; return this;}
+//    value(v) {if(this.isFail){this.result.alt=v}; return this;}
+//    cause(v) {if(this.isFail && isFn(v)){this.result.cb=v}; return this;}
+    pass(cb) {throwFn(cb); if(this.isPass){this._.processor.pass = cb}; return this;}
+    value(v) {if(this.isFail){this._.processor.value=v}; return this;}
+    cause(cb) {throwFn(cb); if(this.isFail){this._.processor.cause = cb}; return this;}
+    // 結果確定（実装任せ／例外発生／値返却）
+    //judge(...args) {return this.isPass ? this._.res.value : this._.res.unwrap(...args)}
+    judge() {return this.isPass ? (undefined===this._.processor.pass ? this._.res.value : this._.processor.pass) : this._.res.unwrap(this._.processor)}
     throw(fn) {return this.isPass ? this._.res.value : this._.res.throw(fn)}
     at(v) {return this.isPass ? this._.res.value : this._.res.at(v)}
 }
 class JudgementResult {
-    constructor(value) {this._={value}}
+    constructor(value) {this._={value};}
     get value() {return this._.value}
 }
 class Pass extends JudgementResult {constructor(v) {super(v)}}
@@ -100,7 +112,7 @@ class Fail extends JudgementResult {
 //        this._.candidates = this._.value;
         this._.cause = args.find(a=>this.#isCause(a));
         this._.value = args.find(a=>this.#isValue(a));
-        console.log('cause,value:', this._.cause, this._.value);
+//        console.log('cause,value:', this._.cause, this._.value);
         if (undefined===this._.value || undefined===this._.cause) {throw new JudgementImplementationError(`Failの引数はErrorインスタンスとそれ以外の値の二つ必要です。`)}
 //        if (Judgement.FailedAct.Cause===this._.act && args[0]===this._.value) {throw new JudgementImplementationError(`Failの引数順が不正です。Judgement.FailedAct.Causeが指定されているため、第一引数はErrorインスタンスであるべきです。実際値:${args[0]}`)}
 //        if (Judgement.FailedAct.Value===this._.act && args[0]===this._.cause) {throw new JudgementImplementationError(`Failの引数順が不正です。Judgement.FailedAct.Valueが指定されているため、第一引数は任意の値（Errorインスタンスを除く）であるべきです。実際値:${args[0]}`)}
@@ -114,10 +126,14 @@ class Fail extends JudgementResult {
     get cause() {return this._.cause}
     #isValue(v) {return !this.#isCause(v)}
     #isCause(v) {return v instanceof Error}
-    unwrap(...args) {return this.#isCause(this.first) ? this.throw(...args) : this.at(...args);}
+    unwrap(p) {return this.#isCause(this.first) ? this.throw(p?.cause) : this.at(p?.value);}
+//    unwrap(...args) {return this.#isCause(this.first) ? this.throw(...args) : this.at(...args);}
 //    throw(fn) {return isFn(fn) ? fn(this.cause) : this.#throw()}
-    throw(fn) {if(isFn(fn)){fn(this.cause)}; this.#throw();}
-    #throw() {throw new JudgementFailError(`失敗。`, this.cause)}
+//    throw(fn) {if(isFn(fn)){fn(this.cause)}; this.#throw();}
+    throw(fn) {if(isFn(fn)){fn(this.#error())}; this.#throw();}
+    #throw() {throw this.#error()}
+    #error() {return new JudgementFailError(`失敗。`, this.cause)}
+//    at() {return undefined!==this._.alt ? this._.alt : this.value}
     at(v) {return undefined!==v ? v : this.value}
 }
 export {
