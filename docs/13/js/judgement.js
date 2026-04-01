@@ -42,7 +42,7 @@ class Judgement {
         failedAct = this.#validFailedAct(failedAct);
         const res = this.#callbackFn(fn, failedAct); // 引数で渡す
         this.#validResult(res);
-        this._={fn, res, failedAct, on:{pass:undefined, value:undefined, cause:undefined}};
+        this._={fn, res, failedAct, on:{pass:undefined, throw:undefined, at:undefined}};
     }
     #validFailedAct(v) {// vは数,字,関数のいずれか。0:mix:Judgement.mix, 1:cause:Judgement.cause, 2:value:Judgement.value
         const nms = [...Object.keys(judActs)];
