@@ -149,7 +149,6 @@ describe('Judgement', () => {
                         await expect(target()).rejects.toThrow(TypeError);
                         await expect(target()).rejects.toThrow(`fnの戻り値はPassかFailのいずれかであるべきです。`);
                     });
-                    /*
                     test('constructor(async(pass,fail)=>pass())', async() => {
                         const j = await new Judgement((pass,fail)=>pass());
                         expect(j).toBeInstanceOf(Judgement);
@@ -158,14 +157,13 @@ describe('Judgement', () => {
                         expect(j.result).toBeInstanceOf(Pass);
                         expect(j.result.value).toBe(undefined);
                     });
-                    */
                     test.each([
                         [undefined, 0],
                         [null, 0],
                         [true, 0],
                         [1, 0],
                     ])('constructor((pass,fail)=>pass(%p))', (a, expected) => {
-                        const j = new Judgement((pass,fail)=>pass(a));
+                        const j = await new Judgement(async(pass,fail)=>pass(a));
                         expect(j).toBeInstanceOf(Judgement);
                         expect(j.isPass).toBe(true);
                         expect(j.isFail).toBe(false);
