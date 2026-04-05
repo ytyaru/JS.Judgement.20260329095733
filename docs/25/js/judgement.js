@@ -1,39 +1,12 @@
-class ImplementationError extends Error {
-    constructor(msg, cause) {
-        super(msg, cause ? {cause} : undefined);
-        this.name = 'ImplementationError';
-    }
-}
-class JudgementError extends Error {
-    constructor(msg, cause) {
-        super(msg, cause ? {cause} : undefined);
-        this.name = 'JudgementError';
-    }
-}
-class JudgementImplementationError extends Error {
-    constructor(msg, cause) {
-        super(msg, cause ? {cause} : undefined);
-        this.name = 'JudgementImplementationError';
-    }
-}
-class JudgementAsyncError extends Error {
-    constructor(msg, cause) {
-        super(msg, cause ? {cause} : undefined);
-        this.name = 'JudgementAsyncError';
-    }
-}
-class JudgementResultError extends Error {
-    constructor(msg, cause) {
-        super(msg, cause ? {cause} : undefined);
-        this.name = 'JudgementResultError';
-    }
-}
-class JudgementFailError extends Error {
-    constructor(msg, cause) {
-        super(msg, cause ? {cause} : undefined);
-        this.name = 'JudgementFailError';
-    }
-}
+// --- エラークラス群（標準の {cause} 形式に統一） ---
+class ImplementationError extends Error { constructor(msg, options) { super(msg, options); this.name = 'ImplementationError'; } }
+class JudgementError extends Error { constructor(msg, options) { super(msg, options); this.name = 'JudgementError'; } }
+class JudgementImplementationError extends Error { constructor(msg, options) { super(msg, options); this.name = 'JudgementImplementationError'; } }
+class JudgementAsyncError extends Error { constructor(msg, options) { super(msg, options); this.name = 'JudgementAsyncError'; } }
+class JudgementResultError extends Error { constructor(msg, options) { super(msg, options); this.name = 'JudgementResultError'; } }
+class JudgementFailError extends Error { constructor(msg, options) { super(msg, options); this.name = 'JudgementFailError'; } }
+
+
 const isFn = (v) => 'function'===typeof v
     , throwFn = (v, n) => {if (!isFn(v)) {throw new TypeError(`${n}は関数であるべきです。`)}}
     , isPms = (v) => v instanceof Promise
@@ -71,7 +44,7 @@ class Judgement {
     #callbackFn(fn, failedAct) {
         throwFnOrAFn(fn, 'fn');
         try {return fn(...this.#makePassFail(failedAct))}
-        catch(e) {/*console.log(e);*/throw new JudgementImplementationError(`new Judgement(fn)のfnコールバック関数実行時に例外発生しました。内容を見直してください。`, e)}
+        catch(e) {/*console.log(e);*/throw new JudgementImplementationError(`new Judgement(fn)のfnコールバック関数実行時に例外発生しました。内容を見直してください。`, {cause:e})}
     }
     #makePassFail(failedAct) {
         const pass = (v) => new Pass(v);
@@ -110,7 +83,12 @@ class AsyncJudgement extends SyncJudgement {
             this._.res = actualRes;
             Object.defineProperty(this, 'then', { value: undefined });
             resolve(this);
-        } catch (e) {reject(e);}
+        //} catch (e) {reject(e);}
+        } catch (e) {
+            // 非同期エラーも同期と同じメッセージでラッピングする
+            reject(new JudgementImplementationError(`new Judgement(fn)のfnコールバック関数実行時に例外発生しました。内容を見直してください。`, { cause: e }));
+        }
+
     }
     #throwPms(s) {if(isPms(this._.res)){throw new JudgementAsyncError(`${s}を呼び出す前にawaitすべきです。`)}}
     get isPass() {this.#throwPms('isPass'); return super.isPass;}
@@ -156,7 +134,8 @@ class FailOrder {
     static #throwAt(...args) {return this.#throwBoth('at', ...args)}
     static #throwBoth(name, ...args) {
         if (!this.#isBothErr(...args)) {
-            throw new JudgementImplementationError(`new Judgement((pass,fail)=>)のfail.${name}()やfail.at()ならその引数は両方共Errorインスタンスであるべきです。fail.throw()なら例外発生優先、fail.at()なら値返却優先です。`);
+//            throw new JudgementImplementationError(`new Judgement((pass,fail)=>)のfail.${name}()やfail.at()ならその引数は両方共Errorインスタンスであるべきです。fail.throw()なら例外発生優先、fail.at()なら値返却優先です。`);
+            throw new JudgementImplementationError(`new Judgement((pass,fail)=>)のfail.${name}()の引数二個は両方共Errorインスタンスであるべきです。judge()呼出時、fail.throw()ならその第一引数を例外発生させ、fail.at()ならその第一引数を返却します。第二引数は、それぞれat()に返却され、throw()呼出時に例外発生させます。`);
         } else {return true}
     }
     static #isBothErr(...args) {return args.every(v=>isErrIns(v))}
@@ -184,7 +163,7 @@ class Fail extends JudgementResult {
     get _isTwoAugs() {return this._.value!==this._.cause} // これを使う
     unwrap(p) {return isErrIns(this._.first) ? this.throw(p?.throw) : this.at(p?.at);}
     throw(fn) {
-        const e = new JudgementFailError(`失敗。`, this._.cause);
+        const e = new JudgementFailError(`失敗。`, {cause:this._.cause});
         if(isFn(fn)){ fn(e) }; 
         throw e;
     }

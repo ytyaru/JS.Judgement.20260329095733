@@ -7,14 +7,18 @@
 * err.js
 * typis.js
 * decolass.js
+* lingar.js
+* ThisDecolass.js
 
 ## judgement.jsに存在する重複コード
 
-Judgement.jsに存在する重複コードは以下3箇所だ。
+Judgement.jsに存在する重複コードや保守性改善点は以下5箇所だ。
 
 1. エラー定義
 2. 型チェック
 3. スーパークラス・デコレーション
+4. 自然言語（エラーメッセージ等）
+5. judgement.js内における予期せぬエラー時の挙動制御
 
 ### 1. エラー定義
 
@@ -176,6 +180,228 @@ decolass.on('propName', (propName)=>{任意処理});
 // 第二引数でセットした属性のすべてのプロパティに対して、第三引数で指定したコールバック関数を差し込む
 Decolass.on(AsyncJudgement, t=>t.method.getter, (propName)=>{任意処理});
 ```
+
+### 4. 自然言語（エラーメッセージ等）
+
+エンドユーザに表出するメッセージは自然言語だ。すなわち日本語・英語・ドイツ語など様々な言語がある。これを単一のソースコードで表現できるようにすべきだ。さもなくば自然言語の数だけ重複ソースコードを書かねばならなくなってしまう。
+
+```javascript
+throwFn = (v, n) => {if (!isFn(v)) {throw new TypeError(`${n}は関数であるべきです。`)}}
+```
+
+以下のように`i18n`という国際化の責任区分であることと、表示すべきメッセージの区分と、その識別子と、そのメッセージに必要な引数を渡す必要が有る。
+
+```javascript
+throwFn = (v, n) => {if (!isFn(v)) {throw new TypeError(i18n.err.001(n)}}
+```
+
+もしメッセージ識別子が数から始まるものであるなら、JSではそれを識別子にはできない。可能だが`i18n.err['001']`のように冗長な表記をせねばならない。それを避けるためには以下のように引数化すべきか。
+
+```javascript
+throwFn = (v, n) => {if (!isFn(v)) {throw new TypeError(i18n.err(001, n)}}
+```
+
+さて、国際化においては、「いつメッセージ取得するか」が重要だ。
+
+1. ビルド時にメッセージが確定し、ソースコードとして書き出す
+2. 実行時にメッセージが確定し、stringリテラル値として取得する
+
+1と2はそれぞれ長所と短所がある。
+
+No|方法|長所|短所
+--|----|----|----
+1|ビルド時に埋め込む|高速。実行時オーバーヘッドなし|実行時に言語切替不可
+2|実行時に取得する|実行時に言語切替可|低速。実行時に言語別メッセージデータを動的ロードし、所定メッセージを取得する時に毎回取得関数を実行せねばならない。
+
+実行時のパフォーマンスに影響するため、出力するソースコードは分岐させる必要がある。以下のように。
+
+```tree
+dist/
+    esm/
+        lang/
+            lingar/             # 2.実行時に取得する版
+                lib/
+                    ja.json     
+                    en.json
+                judgement.js    # import('./lib/ja.json' {with:{type:'json'}})
+            ja/                 # 1.ビルド時に埋め込む版
+                judgement.js    # 日本語版
+            en/                 # 1.ビルド時に埋め込む版
+                judgement.js    # 英語版
+```
+
+尤も、judgement.jsのような小規模なものはビルド時に埋め込めば十分だ。基本的には利用者の母国語一つあれば十分だ。そのほうがパフォーマンスも良い。
+
+ただ、どちらを選ぶにせよ、コードに書く内容は統一したい。コード内容を変更することなく1と2を切り替えることが可能にしたい。ビルド時に1と2を切り替えるようにしたい。それさえ守れたらコードはDRYに書けるはずで保守性も高く、実行時の要件次第で出力内容を選べるという最高の状況を確立できるはずだ。
+
+こうした仕組みはBun Macrosで自力実装することで構築できると思う。かなり大変だろうがね。
+
+### 5. judgement.js内における予期せぬエラー時の挙動制御
+
+これは私の考えだが、何らかのコードでエラーが起きた時は、必ず修正するために必要な全ての情報をメッセージで伝えるべきだと考えている。
+
+だが、必ずしも全ての例外発生を網羅できる保証はない。私の実装漏れがあるかもしれないし、利用者のブラウザ環境によってはエラーになる場合もある。それら全てのパターンを網羅することは論理的に不可能だ。未知の状況に備えることはできないからだ。
+
+だが、未知の状況が発生したことは検知できるはずだ。すなわち私はjudgement.js内において論理的に起こりうるエラーを全て網羅したつもりだが、それ以外のエラーが発生した時、そのことをエンドユーザに伝えることはできる。以下のようにすれば良いはずだ。
+
+```
+try {
+    // judgement内における処理
+} catch(e) {
+    if (e instanceof JudgementError) {throw e} // 予期したエラーは必ずJudgementError継承型である
+    else {throw new JudgementError(`予期せぬエラーです。`, e);} // Judgement実装者(私)にとって想定外のエラー（実装者のエラー設計に漏れがあったか、利用者の実行環境が保証外か）
+}
+```
+
+これにて「judgement.jsで発生したエラーの型は必ずJudgementErrorである」ということが保証できる。型を見ただけで「judgement.jsでエラーが発生したんだな」と分かる。ついでに`JudgementUnexpectedError`のようにしておけば、「Judgement開発者すら予期せぬエラーが発生したようだ。つまり実行環境との差異による問題かもしれない」とアタリを付けやすくなるはずだ。
+
+だが、これを実装するには問題がある。DRYに書くのが難しいことだ。
+
+上記のコードは、judgement.js内で公開する全APIのスコープで実装すべきだ。しかしそれだと上記コードが大量に重複しDRYに書けなくなってしまう。
+
+以下の`isPass`〜`at`に至るまですべてにおいて実装する必要がある。もっと言えば、他のクラスにも書く必要がある。
+
+```
+class SyncJudgement extends Judgement {
+    constructor(fn, failedAct=Judgement.mix, res) {
+        super(fn, failedAct);
+        this._={fn, res, failedAct, on:{pass:undefined, throw:undefined, at:undefined}};
+    }
+    get isPass() {return this._.res instanceof Pass}
+    get isFail() {return this._.res instanceof Fail}
+    // judge()呼出時のコールバック関数やデフォルト値の設定（メソッドチェーン）
+    onPass(cb) {throwFn(cb); if(this.isPass){this._.on.pass = cb}; return this;}
+    onAt(cb) {throwFn(cb); if(this.isFail){this._.on.at = cb}; return this;}
+    onThrow(cb) {throwFn(cb); if(this.isFail){this._.on.throw = cb}; return this;}
+    // 結果確定（実装任せ／例外発生／値返却）
+    judge() {return this.isPass ? (undefined===this._.on.pass ? this._.res.value : this._.on.pass(this._.res.value)) : this._.res.unwrap(this._.on)}
+    throw(fn) {return this.isPass ? this._.res.value : this._.res.throw(fn)}
+    at(v) {return this.isPass ? this._.res.value : this._.res.at(v)}
+}
+```
+
+そこで、デコレーションする専用クラスを作ったと仮定し、次のようにDRYに書けるようにしたい。
+
+```
+class SyncJudgement extends Judgement {
+    constructor(fn, failedAct=Judgement.mix, res) {
+        super(fn, failedAct);
+        this._={fn, res, failedAct, on:{pass:undefined, throw:undefined, at:undefined}};
+        ThisDecolass.on(SyncJudgement, t=>t.method.getter, (propName)=>{
+            try {
+                // judgement内における処理
+                return this[`_${name}`](...args);
+            } catch(e) {
+                if (e instanceof JudgementError) {throw e} // 予期したエラーは必ずJudgementError継承型である
+                else {throw new JudgementError(`予期せぬエラーです。`, e);} // Judgement実装者(私)にとって想定外のエラー（実装者のエラー設計に漏れがあったか、利用者の実行環境が保証外か）
+            }
+        });
+    }
+    get _isPass() {return this._.res instanceof Pass}
+    get _isFail() {return this._.res instanceof Fail}
+    // judge()呼出時のコールバック関数やデフォルト値の設定（メソッドチェーン）
+    _onPass(cb) {throwFn(cb); if(this.isPass){this._.on.pass = cb}; return this;}
+    _onAt(cb) {throwFn(cb); if(this.isFail){this._.on.at = cb}; return this;}
+    _onThrow(cb) {throwFn(cb); if(this.isFail){this._.on.throw = cb}; return this;}
+    // 結果確定（実装任せ／例外発生／値返却）
+    _judge() {return this.isPass ? (undefined===this._.on.pass ? this._.res.value : this._.on.pass(this._.res.value)) : this._.res.unwrap(this._.on)}
+    _throw(fn) {return this.isPass ? this._.res.value : this._.res.throw(fn)}
+    _at(v) {return this.isPass ? this._.res.value : this._.res.at(v)}
+}
+```
+
+上記のような構造を、他のクラスにも実装する。しかしそれはそれでクラスの数だけ重複コードが出来てしまう。`try catch`の部分は共通なのだから一度の定義で良いはずだ。
+
+```
+const unexpected = (propName)=>{
+    return (self, ...args)=>{
+        try {
+            // judgement内における処理
+            return this[`_${name}`](...args);
+        } catch(e) {
+            if (e instanceof JudgementError) {throw e} // 予期したエラーは必ずJudgementError継承型である
+            else {throw new JudgementUnexpectedError(`予期せぬエラーです。`, e);} // Judgement実装者(私)にとって想定外のエラー（実装者のエラー設計に漏れがあったか、利用者の実行環境が保証外か（ECMAScript仕様変更・追加により実装時点の言語仕様と整合性がとれなくなって破綻したなど））
+        }
+    };
+};
+class SyncJudgement extends Judgement {
+    constructor(fn, failedAct=Judgement.mix, res) {
+        super(fn, failedAct);
+        this._={fn, res, failedAct, on:{pass:undefined, throw:undefined, at:undefined}};
+        ThisDecolass.on(SyncJudgement, t=>t.method.getter, this, (propName)=>unexpected(propName));
+    }
+    get _isPass() {return this._.res instanceof Pass}
+    get _isFail() {return this._.res instanceof Fail}
+    // judge()呼出時のコールバック関数やデフォルト値の設定（メソッドチェーン）
+    _onPass(cb) {throwFn(cb); if(this.isPass){this._.on.pass = cb}; return this;}
+    _onAt(cb) {throwFn(cb); if(this.isFail){this._.on.at = cb}; return this;}
+    _onThrow(cb) {throwFn(cb); if(this.isFail){this._.on.throw = cb}; return this;}
+    // 結果確定（実装任せ／例外発生／値返却）
+    _judge() {return this.isPass ? (undefined===this._.on.pass ? this._.res.value : this._.on.pass(this._.res.value)) : this._.res.unwrap(this._.on)}
+    _throw(fn) {return this.isPass ? this._.res.value : this._.res.throw(fn)}
+    _at(v) {return this.isPass ? this._.res.value : this._.res.at(v)}
+}
+});
+```
+
+ThisDecolassをどう実装するか。実行対象がディスクリプタかメソッドかによって`Reflect`の呼び出しメソッドを変える。それで実行できそうかな？
+
+`ThisDecolass.on`の第一引数は、第三引数`this`だけで足りそうだ。`this.constructor`とやればクラス取得できるはずだから。つまり以下のように引数を減らせるはずだ。
+
+```
+ThisDecolass.on(this, t=>t.method.getter, (propName)=>unexpected(propName));
+```
+
+また、SyncJudgementを継承したAsyncJudgementでは`try catch`がトップスコープでないことが問題にならないだろうか？　これについては`try catch`をネストすれば解決か？　内側にある`SyncJudgement`内にある`try catch`が先に走るだろうが、それを上の`AsyncJudgement`側でキャッチして更に`throw`すれば良いだろうか。無駄に奥ゆかしくネストが増えるように見えてしまうが。
+
+さて、ここまで考えておいて何だが、ぶっちゃけ、これを実装する必要性があるかどうかは疑問だ。もし予期せぬエラーが発生したとしても、スタックトレースによってjudgement.jsというファイルパスは表出するはずだ。ならば自動的にjudgement.jsでエラーが発生したことも発覚するはずだ。よって今回のような面倒な実装をする必要はないとも考えられる。
+
+一体、どこまでエラー時の挙動を親切にすべきか。保守性とパフォーマンスと可用性との間で起きるトレードオフか。複雑すぎる。
+
+### 6. エラー時の問題解決プロセス提示
+
+これは解決不能問題だ。対処方法は無い。
+
+ソフトウェアとは問題解決を自動化するツールだ。正常時は良い。問題は異常時だ。何らかの原因で異常発生すると次のようなルートに分岐する。
+
+* 警告を出して続行する（想定外の結果になるだろうが、中断すると致命的なので、実行完了できる代替値や方法で完了させた場合。もし想定外の結果なら、何が原因でこうなっており、何をどうすれば想定通りに動作するか知らせる）
+* 異常を知らせ中断する（致命的な問題により続行不能のため中断する場合。何が原因でこうなっており、何をどうすれば想定通りに動作するか知らせる）
+
+ソフトウェアにおいて発生する問題は全て既知であるべきだ。しばしば「予期せぬエラー」という問題が発生するが、それは極力ゼロにすべきだ。だが、未来がどうなるかは誰にも確定できない。不確定性原理やゲーデルの不完全性定理、エントロピー増大の法則などからみて、この物理世界においては起こりうる全ての事象パターンを一つの漏れもなく完全に網羅することは不可能だ。この物理世界において森羅万象は、未来方向に開かれ、常に多様化し拡散してしまう以上、現時点での網羅は、未来において不足するものだ。不足は約束されている。
+
+だから、できることは可能な限り解決するための情報を厳選し開示することである。問題は特定せねば無限の可能性から探らねばならず解決不能になるのに厳選しすぎると視野狭窄に陥り真の原因に辿り着けない場合もあることと、問題を特定するだけの情報がなければ問題箇所を特定できないが、情報が多すぎても今どれが必要か判別することが困難になることだ。どれも二律背反性をもっており、これさえやれば最適解だと言える方法がないように思える。
+
+特に予期せぬエラー時は、どの情報をどれだけ提示すれば良いか決定が難しい。「ソースコードを読め」ではあまりに乱暴すぎる。一体どこのソースコードを読むべきか。それを読んだ結果、じつはコードには問題なくて、データに問題があっただけで、データファイル修正すべきだった、というオチになることもよくある。よって、修正作業が必要最小限であるためには、「原因分析のためにソースコードを解読する」という作業を排除し、自然言語によるメッセージだけで、どこをどうすれば良いか分かるようにすべきだ。
+
+* 客観的事実
+    * いつ
+    * どこで
+    * どんな
+    * 問題が起きたか
+* 原因分析（責任の所在を特定する）
+    * 誰が書いたどのコード箇所で起きたか
+    * 何が原因で起きたか
+* 対策考案
+    * どうなることを望むか
+    * 望みを叶えるためにどうすれば良いか
+
+問題解決とは、あまりにも大変な道程だ。
+
+エラーメッセージは、上記のように問題を解決するために有効な内容になっているか？　それを判断するためには、もはやプログラミング言語のコンパイルでは判定不能だ。prologなどの論理プログラムでも不可能だ。必要な前提知識は何か。どの文脈において話しているか。それらを最初からすべて話すと、あまりに膨大になってしまう。なのにそれらを知らねば読み解け無い。
+
+このソフトウェアは何か。プログラミングとは何か。プログラミング言語とは何か。機械語とは何か。バイナリデータとは何か。コンピュータとは何か。OSとは何か。ファイルシステムとは。木構造とは。ファイルパスとは。使える文字は。文字とは何か。文字コードとは何か。
+
+ソフトウェアを理解するにはプログラミングの基礎知識が必要だ。プログラミングを理解するにはコンピュータの基礎知識が必要だ。コンピュータの基礎知識を理解するには数学や論理が必要だ。見えないものを理解するには体験が必要だ。体験するには手を動かす必要がある。それは脳の計算速度と比べて遥かに遅く、それでいて怪我やエネルギー損失などの負荷が大きすぎる。これらをすべて解決するまで実践せねばならない。あまりにも根深すぎる。そんなものを一々学習して、一体いつになったら原因が理解できるというのか。人生のほうが先に終わりそうだ。
+
+だからこそ「AファイルのR行C列目にあるXという識別子が未定義です。なのにBファイルでそれを参照しています。A,B両ファイルでマッピングするために共通する識別子が必要です。」というようなエラーメッセージが必要なのだ。
+
+当然、ファイル名は最小限のテキストでありながら、表出しないデータとしてファイルへの直リンクURLもある。クリックするだけでそのファイルを参照し、しかも指定した行列位置にフォーカスし、問題となる識別子の箇所がテキスト選択された状態で強調表示される。それくらいに問題箇所を特定し自動化できるレベルに仕上げるべきだ。ここまでやって、ようやく「問題箇所の特定と誘導」までは終わる。当然だが、その問題箇所が間違っているなど論外だ。
+
+さて、問題箇所の特定と誘導が終わったら、次に「問題箇所をどう修正すれば良いか」だ。それが理解できるだけのエラーメッセージであるべきだ。
+
+じゃあ、そのエラーメッセージが論理的にみて問題解決するために必要なすべての情報を網羅できているかを自動チェックできるか？　これを自動化しないことにはメッセージ文言を考えた人間によるヒューマンエラーを排除できない。だが、こればかりは解決不能だ。自然言語をコンピュータが理解することは未だ不可能だ。AIですら確率論でテキストの羅列を出しているだけであって、論理を理解している訳ではない。じつは「理解する」という現象すら、どのように実現すれば良いかを未だ理解していない可能性すらある。脳の構造を理解していなければ、それを模倣することも不可能だ。もし脳すら確率論であるならば、それで問題解決する保証はできないと確定する。
+
+よって、この「6. エラー時の問題解決プロセス提示」という大きな課題はあれど、それを解決することは現代人には未だ不可能と思われる。せめてそのことをここに記しておくことで、この問題が残存していることを忘れぬよう意識させることで、いつか誰かが何とかして解決しようとすることに少しでも寄与することを願う。今の私には他人に丸投げすることしかできない。
 
 ## 構造と最適化
 
