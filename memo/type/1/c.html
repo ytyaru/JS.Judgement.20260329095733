@@ -1,0 +1,92 @@
+<script>
+const isStrictConstructor = (v) => {
+  if (typeof v !== 'function') return false;
+  const str = Function.prototype.toString.call(v);
+
+  if (str.includes('[native code]')) {
+    return v.prototype !== undefined && !v.name.startsWith('bound ');
+  }
+
+  const cleanStr = str
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/\/\/.*/g, ' ')
+    .trim();
+
+  return /^class\b/.test(cleanStr);
+};
+
+const runTests = () => {
+  // 意地悪なパターンを実オブジェクトとして定義
+  const tests = [
+    {
+      // 改行・前後コメント
+      val: // 前置class A {
+  constructor() {}
+} // 後置
+      , expected: true, label: "Class with line comments & newline"
+    },
+    {
+      // インラインコメント（最小構成）
+      val: /*a*/class/*b*/MyClass{/*c*/},
+      expected: true, label: "Class with inline comments"
+    },
+    {
+      // 空の匿名クラス（インライン）
+      val: /*a*/class/*b*/{/*c*/},
+      expected: true, label: "Anonymous Class with inline comments"
+    },
+    {
+      // JSDoc風
+      val: /**
+ * JSDoc
+ */class B {
+  /** method */
+}
+      , expected: true, label: "Class with JSDoc style comments"
+    },
+    {
+      // 複雑な複数行コメント
+      val: /* ファイルコメント
+ */// クラスコメントclass C {
+    // コメント
+    /* メソッドコメント
+     */
+}
+      , expected: true, label: "Class with complex multi-line comments"
+    },
+    { val: String, expected: true, label: "Native Constructor (String)" },
+    { val: Boolean, expected: true, label: "Native Constructor (Boolean)" },
+    { 
+      val: function a() { const s = "class A {}"; }, 
+      expected: false, label: "Normal function containing 'class' string" 
+    },
+    { val: function() {}, expected: false, label: "Normal Function (ES5)" },
+    { val: () => {}, expected: false, label: "Arrow Function" },
+    { val: String.bind(null), expected: false, label: "Bound Native Function" },
+    { val: (class {}).bind(null), expected: false, label: "Bound Class" }
+  ];
+
+  console.log("--- Start Tests ---");
+  let failCount = 0;
+
+  tests.forEach(({ val, expected, label }) => {
+    try {
+      const result = isStrictConstructor(val);
+      if (result !== expected) {
+        console.error(`❌ Failed: ${label} (expected ${expected}, got ${result})`);
+        failCount++;
+      } else {
+        console.log(`✅ Passed: ${label}`);
+      }
+    } catch (e) {
+      console.error(`💥 Error during test: ${label}`, e);
+      failCount++;
+    }
+  });
+
+  console.log(`--- Finished: ${failCount === 0 ? "ALL PASSED" : `FAILED ${failCount}`} ---`);
+};
+
+runTests();
+
+</script>

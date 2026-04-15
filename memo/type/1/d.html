@@ -1,0 +1,86 @@
+<script>
+const isStrictConstructor = (v) => {
+  if (typeof v !== 'function') return false;
+  const str = Function.prototype.toString.call(v);
+
+  if (str.includes('[native code]')) {
+    return v.prototype !== undefined && !v.name.startsWith('bound ');
+  }
+
+  const cleanStr = str
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/\/\/.*/g, ' ')
+    .trim();
+
+  return /^class\b/.test(cleanStr);
+};
+const runTests = () => {
+  const tests = [
+    // --- リテラル記法（変数に代入して確実に『式』にする） ---
+    { 
+      val: (// 前置class A {
+  constructor() {}
+} // 後置
+      ), expected: true, label: "Literal: Class with line comments & newline" 
+    },
+    { 
+      val: ( /*a*/class/*b*/MyClass{/*c*/} ), 
+      expected: true, label: "Literal: Class with inline comments" 
+    },
+    { 
+      val: ( /*a*/class/*b*/{/*c*/} ), 
+      expected: true, label: "Literal: Anonymous Class" 
+    },
+    { 
+      val: (/**
+ * JSDoc
+ */class B {
+  /** method */
+}
+      ), expected: true, label: "Literal: JSDoc style" 
+    },
+    { 
+      val: (/* ファイルコメント
+ */// クラスコメントclass C {
+    // コメント
+    /* メソッドコメント
+     */
+}
+      ), expected: true, label: "Literal: Complex multi-line" 
+    },
+
+    // --- Function記法 ---
+    (() => {
+      try {
+        const fn = new Function(`return // 前置
+class FunctionCase {} // 後置`);
+        return { val: fn(), expected: true, label: "Function: Dynamic class with comments" };
+      } catch (e) { return null; }
+    })(),
+
+    // --- その他 ---
+    { val: String, expected: true, label: "Native: String" },
+    { val: Boolean, expected: true, label: "Native: Boolean" },
+    { 
+      val: (function a() { const s = "class A {}"; }), 
+      expected: false, label: "Fail: String in function" 
+    },
+    { val: (function() {}), expected: false, label: "Fail: Normal Function (ES5)" },
+    { val: (() => {}), expected: false, label: "Fail: Arrow function" },
+    { val: String.bind(null), expected: false, label: "Fail: Bound Native" },
+    { val: (class {}).bind(null), expected: false, label: "Fail: Bound Class" }
+  ].filter(t => t !== null);
+
+  console.log("--- Start Tests ---");
+  tests.forEach(({ val, expected, label }) => {
+    const result = isStrictConstructor(val);
+    if (result !== expected) {
+      console.error(`❌ Failed: ${label} (expected ${expected}, got ${result})`);
+    } else {
+      console.log(`✅ Passed: ${label}`);
+    }
+  });
+};
+
+runTests();
+</script>

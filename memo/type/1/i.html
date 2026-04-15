@@ -1,0 +1,78 @@
+<script>
+try {
+    const dynamicClass = new Function("return // pre\n class Dynamic {} \n // post")();
+    console.log("--- toString() Output ---");
+    console.log(`[${Function.prototype.toString.call(dynamicClass)}]`);
+} catch (e) {
+    console.error("Evaluation error:", e);
+}
+
+class ClassLike {
+    // 1. クラス（コンストラクタ関数）らしきものなら真を返す
+    static is(v) {
+        if (this.#isNotFn(v)) return false;
+        const s = Function.prototype.toString.call(v);
+        return this.#isApi(v, s) || this.#isClass(v, s);
+    }
+
+    // 2. ES6 class構文のみ
+    static isClass(v) {
+        if (this.#isNotFn(v)) return false;
+        const s = Function.prototype.toString.call(v);
+        return this.#isClass(v, s);
+    }
+
+    // 3. [native code] で prototype を持つ非 bound な関数のみ
+    static isApi(v) {
+        if (this.#isNotFn(v)) return false;
+        const s = Function.prototype.toString.call(v);
+        return this.#isApi(v, s);
+    }
+
+    // --- 内部判定ロジック ---
+
+    static #isNotFn(v) {
+        return typeof v !== 'function';
+    }
+
+    static #isApi(v, s) {
+        return s.includes('[native code]') && 
+               v.prototype !== undefined && 
+               !v.name.startsWith('bound ');
+    }
+
+    static #isClass(v, s) {
+        // コメントを空白に置換してから判定
+        const cleanStr = s
+            .replace(/\/\*[\s\S]*?\*\//g, ' ')
+            .replace(/\/\/.*/g, ' ')
+            .trim();
+        return /^class\b/.test(cleanStr);
+    }
+}
+
+// --- テスト実行 ---
+const runTests = () => {
+    // new Function が使える環境でのみ動的生成テストを実行
+    let dynamicClass = null;
+    try {
+        dynamicClass = new Function("return // pre\n class Dynamic {} \n // post")();
+    } catch(e) {}
+
+    const tests = [
+        { val: class A {}, expected: true, label: "Literal Class" },
+        { val: dynamicClass, expected: true, label: "Dynamic Class (new Function)" },
+        { val: String, expected: true, label: "Native API" },
+        { val: function() {}, expected: false, label: "Normal Function" },
+        { val: String.bind(null), expected: false, label: "Bound Native" }
+    ];
+
+    console.log("--- ClassLike.is Final Verification ---");
+    tests.filter(t => t.val !== null).forEach(({ val, expected, label }) => {
+        const result = ClassLike.is(val);
+        console.log(`${result === expected ? "✅" : "❌"} ${label} (Result: ${result})`);
+    });
+};
+
+runTests();
+</script>

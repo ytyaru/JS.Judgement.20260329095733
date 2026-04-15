@@ -1,0 +1,22 @@
+<script>
+function isStrictConstructor(fn) {
+  if (typeof fn !== 'function') return false;
+  const s = Function.prototype.toString.call(fn);
+  if (/^\s*(?:\/\*[\s\S]*?\*\/|\/\/[^\r\n]*\s*)*class(?:\s+|\{)/.test(s)) {
+    return true;
+  }
+  if (s.includes('[native code]') && fn.prototype && !fn.name.startsWith('bound ')) {
+    return true;
+  }
+  return false;
+}
+console.assert(isStrictConstructor(new Function("return /* 前置コメント */ class A {}")()));
+console.assert(false===isStrictConstructor(1));
+const fake = function() {};
+fake.toString = () => "class MyFakeClass {}"; // 偽装
+console.assert(false===isStrictConstructor(fake));
+console.assert(isStrictConstructor(new Function(`return // 前置コメント
+class A {}
+// 後置コメント`)()));
+
+</script>

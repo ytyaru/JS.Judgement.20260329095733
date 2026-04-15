@@ -1,0 +1,70 @@
+<script>
+const isStrictConstructor = (v) => {
+  if (typeof v !== 'function') return false;
+  const str = Function.prototype.toString.call(v);
+
+  if (str.includes('[native code]')) {
+    return v.prototype !== undefined && !v.name.startsWith('bound ');
+  }
+
+  const cleanStr = str
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/\/\/.*/g, ' ')
+    .trim();
+
+  return /^class\b/.test(cleanStr);
+};
+
+// 1. テスト用のクラスを「独立した完成体」として事前に定義
+class TestJSDoc {
+  /** method */
+  constructor() {}
+}
+
+class TestComplex {
+  // comment
+  constructor() {}
+}
+
+// 2. 実行用関数
+const runTests = () => {
+  const tests = [
+    {
+      val: TestJSDoc,
+      expected: true,
+      label: "Literal: JSDoc style"
+    },
+    {
+      val: TestComplex,
+      expected: true,
+      label: "Literal: Complex comments"
+    },
+    {
+      // new Function を使い、改行コード(\n)を明示して安全に生成
+      val: new Function("return // comment\n class A {}")(),
+      expected: true,
+      label: "Function: Dynamic class"
+    },
+    {
+      val: String,
+      expected: true,
+      label: "Native: String"
+    },
+    {
+      val: (function() { const s = "class A {}"; }),
+      expected: false,
+      label: "Fail: Normal function"
+    }
+  ];
+
+  console.log("--- Start ---");
+  tests.forEach(({ val, expected, label }) => {
+    const result = isStrictConstructor(val);
+    console.log(`${result === expected ? "✅" : "❌"} ${label}`);
+  });
+};
+
+runTests();
+
+
+</script>

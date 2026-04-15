@@ -1,0 +1,66 @@
+<script>
+const isStrictConstructor = (v) => {
+  if (typeof v !== 'function') return false;
+  let str = Function.prototype.toString.call(v);
+
+  // 1. ネイティブ関数の判定
+  if (str.includes('[native code]')) {
+    return v.prototype !== undefined && !v.name.startsWith('bound ');
+  }
+
+  // 2. new Function() で作られた anonymous 関数への対処
+  // "function anonymous(...) { [body] }" の中身だけを抽出
+  if (v.name === 'anonymous') {
+    const match = str.match(/\{([\s\S]*)\}/);
+    if (match) str = match[1];
+  }
+
+  // 3. コメント除去と判定
+  const cleanStr = str
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/\/\/.*/g, ' ')
+    .trim();
+
+  return /^class\b/.test(cleanStr);
+};
+
+// --- テスト用クラス定義 ---
+class TestJSDoc { /** doc */ constructor() {} }
+
+/* File */ // Class
+class TestComplex { constructor() {} }
+
+const runTests = () => {
+  const tests = [
+    // 復元されたテストケース
+    { val: TestJSDoc, expected: true, label: "Literal: JSDoc style" },
+    { val: TestComplex, expected: true, label: "Literal: Complex comments" },
+    { val: (class {}), expected: true, label: "Literal: Anonymous class" },
+    { val: (/*a*/class/*b*/{}), expected: true, label: "Literal: Inline comments" },
+    {
+      val: new Function("return // pre\n class A {} \n // post")(),
+      expected: true, label: "Function: Dynamic class"
+    },
+    { val: String, expected: true, label: "Native: String" },
+    { val: Boolean, expected: true, label: "Native: Boolean" },
+    // 失敗すべきケース
+    { val: function() { const s = "class A {}"; }, expected: false, label: "Fail: String in function" },
+    { val: function() {}, expected: false, label: "Fail: ES5 function" },
+    { val: () => {}, expected: false, label: "Fail: Arrow function" },
+    { val: String.bind(null), expected: false, label: "Fail: Bound Native" },
+    { val: (class {}).bind(null), expected: false, label: "Fail: Bound Class" }
+  ];
+
+  console.log("--- Start Final Test ---");
+  tests.forEach(({ val, expected, label }) => {
+    const result = isStrictConstructor(val);
+    if (result !== expected) {
+      console.error(`❌ Failed: ${label} (expected ${expected}, got ${result})`);
+    } else {
+      console.log(`✅ Passed: ${label}`);
+    }
+  });
+};
+
+runTests();
+</script>
